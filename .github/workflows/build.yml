@@ -6,6 +6,7 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:  # 允许手动触发构建
 
 jobs:
   build-windows:
@@ -17,30 +18,96 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: '3.10'
         
-    - name: Install dependencies
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~\AppData\Local\pip\Cache
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+        
+    - name: Install base dependencies
       run: |
-        python -m pip install --upgrade pip
+        python -m pip install --upgrade pip setuptools wheel
+        
+    - name: Install requirements
+      run: |
+        pip install numpy>=1.21.0 matplotlib>=3.5.0
+        
+    - name: Install PyInstaller
+      run: |
         pip install pyinstaller
-        pip install -r requirements.txt
+        
+    - name: Clean up typing conflicts
+      run: |
+        pip uninstall -y typing typing_extensions 2>$null || echo "typing packages not found"
+        pip install typing_extensions
         
     - name: Build executable
       run: |
-        pyinstaller --onefile --windowed --name="6-30 气液相平衡计算" main.py
+        pyinstaller --onefile --windowed --name="EquilibriumCalculator" --clean main.py
+        
+    - name: Rename executable to Chinese name
+      run: |
+        if (Test-Path "dist\EquilibriumCalculator.exe") {
+          Rename-Item "dist\EquilibriumCalculator.exe" "气液相平衡计算工具.exe"
+          Write-Host "✅ Executable renamed successfully"
+        } else {
+          Write-Host "❌ Executable not found"
+          exit 1
+        }
+        
+    - name: List output files
+      run: |
+        Get-ChildItem dist -Name
         
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: AbsorptionCalculator-Windows
-        path: dist/AbsorptionCalculator.exe
+        name: EquilibriumCalculator-Windows-${{ github.run_number }}
+        path: dist/气液相平衡计算工具.exe
+        retention-days: 90
         
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
-        files: dist/AbsorptionCalculator.exe
+        files: dist/气液相平衡计算工具.exe
         draft: false
         prerelease: false
+        generate_release_notes: true
+        body: |
+          ## 🎉 气液相平衡计算工具 - Windows版本
+          
+          ### 📋 使用说明
+          1. 下载 `气液相平衡计算工具.exe` 文件
+          2. 双击运行，无需安装Python环境
+          3. 在界面中输入工艺参数进行计算
+          
+          ### 🔧 功能特点
+          - 图形化界面操作
+          - 实时计算结果显示
+          - 详细计算过程展示
+          - 可视化图表分析
+          
+          ### 💡 技术支持
+          如遇问题请在GitHub上创建Issue
+          
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 可选：同时构建其他平台版本
+  build-info:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Display build info
+      run: |
+        echo "🏗️ Building for project: 气液相平衡计算工具"
+        echo "📁 Project folder: 6-30 气液相平衡计算"
+        echo "🐍 Python file: main.py"
+        echo "💻 Target platform: Windows"
+        echo "📦 Output: 气液相平衡计算工具.exe"
